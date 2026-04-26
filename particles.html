@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>S1 Science: Particle Lab Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Noto+Sans+TC:wght@400;700&display=swap');
+        
+        :root {
+            --lab-bg: #020617;
+            --accent: #38bdf8;
+            --panel: rgba(30, 41, 59, 0.7);
+        }
+
+        body { 
+            font-family: 'Noto Sans TC', sans-serif; 
+            background-color: var(--lab-bg); 
+            color: #f8fafc;
+            touch-action: manipulation;
+            overflow: hidden; 
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .mono { font-family: 'JetBrains Mono', monospace; }
+
+        .canvas-container { 
+            background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
+            border-radius: 16px; 
+            position: relative; 
+            overflow: hidden; 
+            flex-grow: 1; 
+            min-height: 45vh;
+            border: 2px solid #334155;
+            box-shadow: inset 0 0 50px rgba(0,0,0,0.5);
+        }
+
+        .glass-panel {
+            background: var(--panel);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+        }
+
+        .tab-btn {
+            transition: all 0.2s ease;
+            border-bottom: 3px solid transparent;
+            white-space: nowrap;
+        }
+        .tab-btn.active {
+            background: rgba(56, 189, 248, 0.15);
+            border-bottom: 3px solid var(--accent);
+            color: var(--accent);
+        }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            background: #1e293b;
+            height: 14px;
+            border-radius: 7px;
+            margin: 15px 0;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 36px;
+            width: 36px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+            border: 5px solid #020617;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+
+        .main-layout {
+            display: grid;
+            grid-template-rows: auto auto 1fr auto;
+            height: 100%;
+            gap: 12px;
+            padding: 12px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        #magnifier-frame {
+            width: 220px;
+            height: 220px;
+        }
+
+        /* Password Modal Style */
+        #password-modal {
+            background: rgba(2, 6, 23, 0.9);
+            backdrop-filter: blur(8px);
+        }
+    </style>
+</head>
+<body id="lab-body">
+
+    <!-- Password Protection Modal -->
+    <div id="password-modal" class="fixed inset-0 z-[100] hidden flex items-center justify-center p-4">
+        <div class="glass-panel p-8 max-w-sm w-full border-sky-500/50 shadow-2xl space-y-6">
+            <div class="text-center">
+                <h2 class="text-xl font-bold text-sky-400 mb-2">身分驗證</h2>
+                <p class="text-xs text-slate-400">請輸入課程授權碼以解鎖此實驗</p>
+            </div>
+            <input type="password" id="lab-password" class="w-full bg-slate-900 border border-slate-700 rounded-lg py-3 px-4 text-center text-xl tracking-[1em] focus:border-sky-500 outline-none" placeholder="****" maxlength="4">
+            <div class="grid grid-cols-2 gap-3">
+                <button onclick="closePasswordModal()" class="py-2.5 bg-slate-800 rounded-lg text-sm font-bold text-slate-400">取消</button>
+                <button onclick="verifyPassword()" class="py-2.5 bg-sky-600 rounded-lg text-sm font-bold text-white shadow-lg shadow-sky-900/20">確認進入</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="msg-box" class="fixed top-5 left-1/2 -translate-x-1/2 z-50 hidden glass-panel px-6 py-3 border-sky-500 text-sky-400 font-bold text-sm shadow-2xl"></div>
+
+    <div class="main-layout w-full">
+        <header class="flex justify-between items-center border-b border-slate-800 pb-2">
+            <div>
+                <h1 class="text-xl font-bold tracking-tight flex items-center gap-2">
+                    <span class="bg-sky-500 text-slate-900 px-1.5 py-0.5 rounded text-[10px] uppercase font-black">PRO</span>
+                    粒子模擬儀器 <span class="text-slate-500 font-normal text-sm hidden sm:inline">| S1 Science</span>
+                </h1>
+            </div>
+            <div class="flex items-center gap-3">
+                <div id="clock" class="text-sky-500 mono text-[10px] hidden md:block opacity-60">SYSTEM_ACTIVE</div>
+            </div>
+        </header>
+
+        <nav class="grid grid-cols-4 gap-2">
+            <button onclick="secureSwitchMode('basic')" id="tab-basic" class="tab-btn active py-2 rounded-lg font-bold text-xs">基本運動</button>
+            <button onclick="secureSwitchMode('dissolve')" id="tab-dissolve" class="tab-btn py-2 rounded-lg font-bold text-xs">溶解過程</button>
+            <button onclick="secureSwitchMode('sprinkler')" id="tab-sprinkler" class="tab-btn py-2 rounded-lg font-bold text-xs">灑水器</button>
+            <button onclick="secureSwitchMode('temp')" id="tab-temp" class="tab-btn py-2 rounded-lg font-bold text-xs">溫度計</button>
+        </nav>
+
+        <div class="grid lg:grid-cols-12 gap-3 min-h-0">
+            <div class="lg:col-span-8 flex flex-col gap-3 min-h-0">
+                <div class="canvas-container" id="sim-display">
+                    <canvas id="mainCanvas"></canvas>
+                    <div class="absolute top-3 left-3 pointer-events-none">
+                        <div id="mode-indicator" class="text-sm font-bold text-white uppercase tracking-wider bg-black/40 px-2 py-1 rounded">BASIC</div>
+                    </div>
+                    <div id="magnifier-frame" class="hidden absolute right-4 bottom-4 rounded-full border-4 border-sky-500/50 glass-panel flex flex-col items-center justify-center pointer-events-none overflow-hidden shadow-2xl">
+                        <div class="absolute top-2 text-[10px] font-bold text-sky-400 bg-black/60 px-2 py-0.5 rounded-full z-10">粒子放大器 (High Res)</div>
+                        <canvas id="zoomCanvas" width="220" height="220" class="rounded-full"></canvas>
+                    </div>
+                </div>
+
+                <div class="glass-panel p-4">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+                        <div class="space-y-1">
+                            <div class="flex justify-between items-center text-[10px] font-bold text-slate-400">
+                                <span>🌡️ 溫度設定</span>
+                                <span class="text-sky-400 text-xs">低 ↔ 高</span>
+                            </div>
+                            <input type="range" min="-263" max="527" value="-173" class="w-full" id="tempSlider" oninput="handleUpdate()">
+                        </div>
+
+                        <div class="space-y-1" id="container-section">
+                            <div class="flex justify-between items-center text-[10px] font-bold text-slate-400">
+                                <span>📦 容器壓縮</span>
+                                <span id="sizeDisplay" class="mono text-emerald-400">100%</span>
+                            </div>
+                            <input type="range" min="30" max="100" value="100" class="w-full" id="sizeSlider" oninput="handleUpdate()">
+                        </div>
+
+                        <div class="flex flex-col justify-center gap-2">
+                            <div id="basic-controls" class="grid grid-cols-3 gap-1">
+                                <button onclick="setBasicState('solid')" class="py-2.5 bg-slate-800 rounded-md text-[10px] font-bold border border-slate-600 active:bg-sky-600">固體</button>
+                                <button onclick="setBasicState('liquid')" class="py-2.5 bg-slate-800 rounded-md text-[10px] font-bold border border-slate-600 active:bg-sky-600">液體</button>
+                                <button onclick="setBasicState('gas')" class="py-2.5 bg-slate-800 rounded-md text-[10px] font-bold border border-slate-600 active:bg-sky-600">氣體</button>
+                            </div>
+                            <button id="action-btn" class="hidden w-full py-2.5 bg-sky-600 text-white rounded-md font-bold text-[10px] uppercase tracking-widest active:scale-95 transition-all"></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-4 min-h-0">
+                <div class="glass-panel p-5 h-full border-l-4 border-sky-500 overflow-y-auto flex flex-col">
+                    <div class="flex items-center gap-2 mb-4">
+                        <span class="text-sky-400">💡</span>
+                        <h3 class="text-sm font-bold text-sky-400 uppercase tracking-widest">思維與挑戰</h3>
+                    </div>
+                    <div id="thinking-questions-list" class="space-y-6">
+                        <!-- Questions only injected here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('mainCanvas');
+        const ctx = canvas.getContext('2d');
+        const zCanvas = document.getElementById('zoomCanvas');
+        const zCtx = zCanvas.getContext('2d');
+        const msgBox = document.getElementById('msg-box');
+        
+        let mode = 'basic';
+        let state = 'gas';
+        let tempCelsius = -173;
+        let containerSize = 100;
+        let particles = [];
+        let solventParticles = [];
+        let waterParticles = [];
+        let isSprinklerBroken = false;
+        let isDissolving = false;
+
+        // Security Configuration
+        let pendingMode = null;
+        const passwords = {
+            basic: '1117',
+            dissolve: '0929',
+            sprinkler: '0702',
+            temp: '1022'
+        };
+
+        const palette = {
+            solid: '#94a3b8',
+            liquid: '#38bdf8',
+            gas: '#f472b6',
+            heat: '#ef4444',
+            sugar: '#ffffff',
+            brass: '#d4af37',
+            silver: '#c0c0c0'
+        };
+
+        const thinkingQuestions = {
+            basic: [
+                { q: "比較固體和氣體，哪一種狀態的粒子具有更多的空間可以被壓縮？" },
+                { q: "當你加熱固體時，粒子的振動會發生什麼變化？" },
+                { q: "為什麼液體可以流動，而固體卻有固定的形狀？" }
+            ],
+            dissolve: [
+                { q: "如果方糖是一整塊而不是碎粉，溶解速度會變慢嗎？為什麼？" },
+                { q: "在微觀層面，『飽和溶液』代表水粒子遇到了什麼情況？" },
+                { q: "除了加熱，還有什麼物理方法可以加快溶解過程？" }
+            ],
+            sprinkler: [
+                { q: "玻璃管內的液體受熱後，粒子之間的『平均距離』產生了什麼變化？" },
+                { q: "為什麼灑水器不直接使用塑膠管，而要使用易碎的玻璃管？" },
+                { q: "如果在極寒天氣下，液體結冰膨脹是否也會導致灑水器誤觸？" }
+            ],
+            temp: [
+                { q: "溫度計上升時，是粒子本身變大了，還是粒子間的空隙變大了？" },
+                { q: "如果我們將溫度計放入冰水中，觀察放大器，粒子的運動速度會如何？" },
+                { q: "為什麼溫度計的玻璃管通常做得很細？" }
+            ]
+        };
+
+        function showMsg(text) {
+            msgBox.innerText = text;
+            msgBox.style.display = 'block';
+            setTimeout(() => msgBox.style.display = 'none', 2000);
+        }
+
+        // --- PASSWORD PROTECTION LOGIC ---
+        function secureSwitchMode(newMode) {
+            if (mode === newMode) return;
+            pendingMode = newMode;
+            document.getElementById('lab-password').value = '';
+            document.getElementById('password-modal').style.display = 'flex';
+            document.getElementById('lab-password').focus();
+        }
+
+        function closePasswordModal() {
+            document.getElementById('password-modal').style.display = 'none';
+            pendingMode = null;
+        }
+
+        function verifyPassword() {
+            const input = document.getElementById('lab-password').value;
+            if (input === passwords[pendingMode]) {
+                const targetMode = pendingMode;
+                closePasswordModal();
+                switchMode(targetMode);
+                showMsg("授權成功，進入實驗...");
+            } else {
+                showMsg("授權碼錯誤，請重新確認！");
+                document.getElementById('lab-password').value = '';
+            }
+        }
+
+        // Allow 'Enter' key to trigger verification
+        document.getElementById('lab-password').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') verifyPassword();
+        });
+
+        function updateThinkingQuestions(m) {
+            const container = document.getElementById('thinking-questions-list');
+            container.innerHTML = thinkingQuestions[m].map((item, index) => `
+                <div class="bg-slate-800/40 p-4 rounded-lg border border-slate-700/50 hover:border-sky-500/30 transition-colors">
+                    <p class="text-xs font-bold text-slate-300">Q${index + 1}: ${item.q}</p>
+                </div>
+            `).join('');
+        }
+
+        function switchMode(newMode) {
+            mode = newMode;
+            if (newMode === 'sprinkler' || newMode === 'temp' || newMode === 'basic') {
+                tempCelsius = -173; 
+                document.getElementById('tempSlider').value = -173;
+            }
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(`tab-${newMode}`).classList.add('active');
+            document.getElementById('mode-indicator').innerText = newMode.toUpperCase();
+            document.getElementById('basic-controls').style.display = (newMode === 'basic') ? 'grid' : 'none';
+            document.getElementById('container-section').style.display = (newMode === 'basic') ? 'block' : 'none';
+            document.getElementById('magnifier-frame').style.display = (newMode === 'temp' || newMode === 'sprinkler') ? 'flex' : 'none';
+            const btn = document.getElementById('action-btn');
+            const actions = { dissolve: "加入方糖", sprinkler: "修復並重置", temp: "重置溫度" };
+            if(actions[newMode]) {
+                btn.classList.remove('hidden');
+                btn.innerText = actions[newMode];
+                btn.onclick = () => handleAction(newMode);
+            } else {
+                btn.classList.add('hidden');
+            }
+            updateThinkingQuestions(newMode);
+            initSimulation();
+        }
+
+        function initSimulation() {
+            particles = [];
+            solventParticles = [];
+            waterParticles = [];
+            isSprinklerBroken = false;
+            isDissolving = false;
+            
+            if (mode === 'basic') {
+                setBasicState(state);
+            } else if (mode === 'temp') {
+                const w = canvas.width, h = canvas.height;
+                const cx = w/2;
+                // Initialize particles specifically for the bulb and tube
+                for(let i=0; i<350; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const r = Math.random() * 50;
+                    particles.push({
+                        x: cx + Math.cos(angle) * r,
+                        y: h - 80 + Math.sin(angle) * r,
+                        vx: (Math.random()-0.5), 
+                        vy: (Math.random()-0.5),
+                        radius: 2.5, 
+                        color: palette.heat
+                    });
+                }
+            } else if (mode === 'dissolve') {
+                for(let i=0; i<300; i++) {
+                    particles.push({
+                        x: Math.random() * canvas.width,
+                        y: Math.random() * canvas.height,
+                        vx: (Math.random()-0.5)*2.5, vy: (Math.random()-0.5)*2.5,
+                        radius: 3.5, color: palette.liquid, type: 'liquid'
+                    });
+                }
+            } else if (mode === 'sprinkler') {
+                const cx = canvas.width / 2;
+                const cy = canvas.height / 2;
+                for(let i=0; i<80; i++) {
+                    particles.push({
+                        x: cx - 8 + Math.random()*16,
+                        y: cy - 35 + Math.random()*70,
+                        vx: (Math.random()-0.5)*1.5, vy: (Math.random()-0.5)*1.5,
+                        radius: 2.5, color: palette.heat
+                    });
+                }
+            }
+        }
+
+        function setBasicState(s) {
+            state = s;
+            particles = [];
+            const w = canvas.width * (containerSize / 100), h = canvas.height * (containerSize / 100);
+            const ox = (canvas.width - w) / 2, oy = (canvas.height - h) / 2;
+            if (s === 'solid') {
+                const cols = 10, rows = 8, gap = 16;
+                for(let r=0; r<rows; r++) {
+                    for(let c=0; c<cols; c++) {
+                        particles.push({
+                            x: ox + w/2 - (cols*gap)/2 + c*gap, 
+                            y: oy + h/2 - (rows*gap)/2 + r*gap,
+                            offsetX: c*gap - (cols*gap)/2 + gap/2,
+                            offsetY: r*gap - (rows*gap)/2 + gap/2,
+                            radius: 7, color: palette.solid, type: 'basic-solid'
+                        });
+                    }
+                }
+            } else if (s === 'liquid') {
+                for(let i=0; i<160; i++) {
+                    particles.push({
+                        x: ox + Math.random()*w, y: oy + h - 40,
+                        vx: (Math.random()-0.5)*3, vy: (Math.random()-0.5)*3,
+                        radius: 6, color: palette.liquid, type: 'liquid'
+                    });
+                }
+            } else if (s === 'gas') {
+                for(let i=0; i<30; i++) {
+                    particles.push({
+                        x: ox + Math.random()*w, y: oy + Math.random()*h,
+                        vx: (Math.random()-0.5)*8, vy: (Math.random()-0.5)*8,
+                        radius: 5, color: palette.gas, type: 'gas'
+                    });
+                }
+            }
+        }
+
+        function handleUpdate() {
+            tempCelsius = parseInt(document.getElementById('tempSlider').value);
+            containerSize = parseInt(document.getElementById('sizeSlider').value);
+            document.getElementById('sizeDisplay').innerText = `${containerSize}%`;
+            if (mode === 'basic' && state === 'solid') {
+                const cx = canvas.width/2, cy = canvas.height/2;
+                particles.forEach(p => {
+                    p.x = cx + p.offsetX;
+                    p.y = cy + p.offsetY;
+                });
+            }
+            if (mode === 'sprinkler' && tempCelsius > 377 && !isSprinklerBroken) {
+                isSprinklerBroken = true;
+                showMsg("警告！玻璃管壓力過大破裂！");
+            }
+        }
+
+        function handleAction(m) {
+            if (m === 'temp') {
+                tempCelsius = -173; document.getElementById('tempSlider').value = -173; handleUpdate();
+            } else if (m === 'dissolve') {
+                isDissolving = true;
+                solventParticles = [];
+                const cx = canvas.width/2, cy = canvas.height/2;
+                for(let r=0; r<6; r++) {
+                    for(let c=0; c<6; c++) {
+                        solventParticles.push({
+                            x: cx - 45 + c*18, y: cy - 45 + r*18,
+                            vx: 0, vy: 0, radius: 7, color: palette.sugar, isFixed: true
+                        });
+                    }
+                }
+            } else {
+                initSimulation();
+            }
+        }
+
+        function drawSprinklerUI(isBroken) {
+            const cx = canvas.width / 2; const cy = canvas.height / 2;
+            ctx.fillStyle = '#475569'; ctx.fillRect(cx - 20, 0, 40, cy - 80);
+            ctx.fillStyle = palette.brass;
+            ctx.beginPath(); ctx.moveTo(cx - 30, cy - 80); ctx.lineTo(cx + 30, cy - 80); ctx.lineTo(cx + 15, cy - 50); ctx.lineTo(cx - 15, cy - 50); ctx.fill();
+            ctx.strokeStyle = palette.brass; ctx.lineWidth = 6;
+            ctx.beginPath(); ctx.moveTo(cx - 25, cy - 70); ctx.quadraticCurveTo(cx - 45, cy, cx, cy + 80); ctx.moveTo(cx + 25, cy - 70); ctx.quadraticCurveTo(cx + 45, cy, cx, cy + 80); ctx.stroke();
+            ctx.fillStyle = '#94a3b8'; ctx.beginPath();
+            for(let i=0; i<12; i++){ const angle = (i/12) * Math.PI * 2; const r = i % 2 === 0 ? 30 : 20; ctx.lineTo(cx + Math.cos(angle)*r, cy + 90 + Math.sin(angle)*r); } ctx.fill();
+            if (!isBroken) {
+                ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 2; ctx.strokeRect(cx - 10, cy - 40, 20, 80);
+                ctx.fillStyle = 'rgba(239, 68, 68, 0.2)'; ctx.fillRect(cx - 9, cy - 39, 18, 78);
+            }
+            if (isBroken) {
+                ctx.fillStyle = 'rgba(56, 189, 248, 0.6)'; ctx.fillRect(cx - 8, cy - 80, 16, 170);
+                for(let i=0; i<8; i++) waterParticles.push({ x: cx, y: cy + 90, vx: (Math.random()-0.5)*20, vy: Math.random()*12, life: 1.0 });
+            }
+        }
+
+        function update() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const speedScale = (tempCelsius + 273) / 100;
+            
+            if (mode === 'temp') {
+                const w = canvas.width, h = canvas.height, cx = w/2;
+                const bulbY = h - 80;
+                
+                // Draw Thermometer Outline
+                ctx.strokeStyle = '#64748b'; ctx.lineWidth = 4;
+                ctx.beginPath(); ctx.arc(cx, bulbY, 60, 0, Math.PI * 2); ctx.stroke();
+                ctx.strokeRect(cx - 15, 40, 30, h - 160);
+                
+                // Logic: Fixed movement logic to prevent teleporting/shaking
+                const expansion = (tempCelsius + 263) * 0.45;
+                const currentMaxY = bulbY - 30 - expansion;
+                
+                particles.forEach((p, idx) => {
+                    // Update movement based on speedScale (Temperature). Increased modifiers to raise quicker.
+                    p.x += (Math.random()-0.5) * speedScale * 1.5;
+                    p.y += (Math.random()-0.5) * speedScale * 2.5;
+
+                    const dx = p.x - cx;
+                    const dy = p.y - bulbY;
+                    const distFromBulb = Math.sqrt(dx*dx + dy*dy);
+
+                    // Physics: Contain within the specific zones
+                    if (p.y > bulbY - 30) {
+                        // Bulb Logic
+                        if (distFromBulb > 54) {
+                            const angle = Math.atan2(dy, dx);
+                            p.x = cx + Math.cos(angle) * 54;
+                            p.y = bulbY + Math.sin(angle) * 54;
+                        }
+                    } else {
+                        // Tube Logic
+                        if (p.x < cx - 12) p.x = cx - 12;
+                        if (p.x > cx + 12) p.x = cx + 12;
+                        
+                        // FIX: Smooth flow logic. Pushing down stronger prevents escaping limits while raising quicker.
+                        if (p.y < currentMaxY) {
+                            p.y += 5; 
+                        }
+                        // Tube bottom limit (entry to bulb)
+                        if (p.y > bulbY - 30) {
+                             // Let it transition to bulb
+                        }
+                    }
+
+                    ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI*2);
+                    // Match the visual color representation behavior like the sprinkler
+                    ctx.fillStyle = tempCelsius > 327 ? '#ffffff' : palette.heat; 
+                    ctx.fill();
+                });
+
+                // Render Magnifier
+                zCtx.fillStyle = '#020617'; zCtx.fillRect(0,0,220,220);
+                zCtx.save(); zCtx.translate(110, 110); 
+                particles.forEach(p => {
+                    const zoomFactor = 4.0;
+                    const rx = (p.x - cx) * zoomFactor;
+                    const ry = (p.y - bulbY) * zoomFactor;
+                    if (Math.abs(rx) < 110 && Math.abs(ry) < 110) {
+                        zCtx.beginPath(); zCtx.arc(rx, ry, p.radius * 2.5, 0, Math.PI*2);
+                        // Make color change just like the sprinkler did
+                        zCtx.fillStyle = tempCelsius > 327 ? '#ffffff' : palette.heat; 
+                        zCtx.fill();
+                    }
+                });
+                zCtx.restore();
+
+            } else if (mode === 'basic') {
+                const w = canvas.width * (containerSize/100), h = canvas.height * (containerSize/100);
+                const ox = (canvas.width-w)/2, oy = (canvas.height-h)/2;
+                ctx.strokeStyle = '#38bdf8'; ctx.setLineDash([5,5]); ctx.strokeRect(ox, oy, w, h); ctx.setLineDash([]);
+                
+                particles.forEach(p => {
+                    if (p.type === 'basic-solid') {
+                        const currentTargetX = (canvas.width/2) + p.offsetX;
+                        const currentTargetY = (canvas.height/2) + p.offsetY;
+                        p.x = currentTargetX + (Math.random()-0.5)*speedScale; 
+                        p.y = currentTargetY + (Math.random()-0.5)*speedScale;
+                    } else if (p.type === 'liquid') {
+                        p.vy += 0.2; 
+                        p.x += p.vx * speedScale * 0.4; p.y += p.vy * speedScale * 0.4;
+                        if (p.x < ox+p.radius) { p.x = ox+p.radius; p.vx *= -0.5; }
+                        if (p.x > ox+w-p.radius) { p.x = ox+w-p.radius; p.vx *= -0.5; }
+                        if (p.y < oy+p.radius) { p.y = oy+p.radius; p.vy *= -0.5; }
+                        if (p.y > oy+h-p.radius) { p.y = oy+h-p.radius; p.vy *= -0.5; }
+                        particles.forEach(other => {
+                            if (p === other) return;
+                            const dx = other.x - p.x, dy = other.y - p.y;
+                            const dist = Math.sqrt(dx*dx + dy*dy);
+                            if (dist < 13) {
+                                const angle = Math.atan2(dy, dx);
+                                p.vx -= Math.cos(angle) * 0.5; p.vy -= Math.sin(angle) * 0.5;
+                            }
+                        });
+                    } else {
+                        p.x += p.vx * speedScale * 0.4; p.y += p.vy * speedScale * 0.4;
+                        if (p.x < ox+p.radius) { p.x = ox+p.radius; p.vx *= -1; }
+                        if (p.x > ox+w-p.radius) { p.x = ox+w-p.radius; p.vx *= -1; }
+                        if (p.y < oy+p.radius) { p.y = oy+p.radius; p.vy *= -1; }
+                        if (p.y > oy+h-p.radius) { p.y = oy+h-p.radius; p.vy *= -1; }
+                    }
+                    ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI*2);
+                    ctx.fillStyle = p.color; ctx.fill();
+                });
+            } else if (mode === 'dissolve') {
+                particles.forEach(p => {
+                    p.x += p.vx * speedScale * 0.4; p.y += p.vy * speedScale * 0.4;
+                    if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
+                    if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
+                    ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI*2);
+                    ctx.fillStyle = p.color; ctx.fill();
+                });
+                solventParticles.forEach(p => {
+                    if (!p.isFixed) {
+                        p.x += p.vx * speedScale * 0.4; p.y += p.vy * speedScale * 0.4;
+                        if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
+                        if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
+                    } else if (isDissolving) {
+                        particles.forEach(wp => {
+                            if (Math.hypot(p.x - wp.x, p.y - wp.y) < 18 && Math.random() < 0.005 * speedScale) {
+                                p.isFixed = false; p.vx = (Math.random()-0.5)*5; p.vy = (Math.random()-0.5)*5;
+                            }
+                        });
+                    }
+                    ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI*2);
+                    ctx.fillStyle = p.color; ctx.fill();
+                });
+            } else if (mode === 'sprinkler') {
+                drawSprinklerUI(isSprinklerBroken);
+                const cx = canvas.width/2, cy = canvas.height/2;
+                zCtx.fillStyle = '#020617'; zCtx.fillRect(0,0,220,220);
+                zCtx.save(); zCtx.translate(110, 110); 
+                if (!isSprinklerBroken) {
+                    particles.forEach(p => {
+                        p.x += p.vx * speedScale * 0.3; p.y += p.vy * speedScale * 0.3;
+                        if (p.x < cx-8 || p.x > cx+8) p.vx *= -1;
+                        if (p.y < cy-35 || p.y > cy+35) p.vy *= -1;
+                        ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI*2);
+                        ctx.fillStyle = tempCelsius > 327 ? '#ffffff' : palette.heat; ctx.fill();
+                        const zoomFactor = 3.5;
+                        const rx = (p.x - cx) * zoomFactor;
+                        const ry = (p.y - cy) * zoomFactor;
+                        zCtx.beginPath(); zCtx.arc(rx, ry, p.radius * 2.5, 0, Math.PI*2);
+                        zCtx.fillStyle = tempCelsius > 327 ? '#ffffff' : palette.heat; zCtx.fill();
+                    });
+                } else {
+                    waterParticles.forEach((wp, index) => {
+                        wp.x += wp.vx; wp.y += wp.vy; wp.vy += 0.4; wp.life -= 0.015;
+                        ctx.fillStyle = `rgba(56, 189, 248, ${wp.life})`; ctx.beginPath(); ctx.arc(wp.x, wp.y, 4, 0, Math.PI*2); ctx.fill();
+                        if (wp.life <= 0 || wp.y > canvas.height) waterParticles.splice(index, 1);
+                    });
+                }
+                zCtx.restore();
+            }
+            requestAnimationFrame(update);
+        }
+
+        function resize() {
+            const container = document.getElementById('sim-display');
+            if (container) {
+                canvas.width = container.clientWidth; canvas.height = container.clientHeight;
+                initSimulation();
+            }
+        }
+        window.addEventListener('resize', resize);
+        window.onload = () => { resize(); switchMode('basic'); update(); };
+    </script>
+</body>
+</html>
